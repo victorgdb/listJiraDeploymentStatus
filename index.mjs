@@ -79,6 +79,7 @@ function extractGitHubRepositories(detail) {
       repo,
       status: pr.status,
       approved,
+      title: pr.name,
     };
   });
 }
@@ -102,11 +103,25 @@ function getStatusEmoji(status) {
 
 (async () => {
   const issues = await getJiraIssues(jqlQuery);
+  const issuesDevInfo = await Promise.all(
+    issues.map((issue) => getIssueDevelopmentInformation(issue.id))
+  );
 
-  for (const issue of issues) {
+  const issuesWithPRs = issues.filter((_, index) => {
+    const devInfo = issuesDevInfo[index];
+    return devInfo && devInfo.pullRequests && devInfo.pullRequests.length > 0;
+  });
+
+  const issuesWithoutPRs = issues.filter((_, index) => {
+    const devInfo = issuesDevInfo[index];
+    return (
+      !devInfo || !devInfo.pullRequests || devInfo.pullRequests.length === 0
+    );
+  });
+
+  for (const issue of issuesWithPRs) {
     const jiraTicketLink = createJiraTicketLink(issue.key);
-    const devInfo = await getIssueDevelopmentInformation(issue.id);
-
+    const devInfo = issuesDevInfo[issues.indexOf(issue)];
     const repositories = extractGitHubRepositories(devInfo);
 
     console.log(chalk.blue(jiraTicketLink), "-", issue.fields.summary);
@@ -119,12 +134,20 @@ function getStatusEmoji(status) {
         "  ",
         statusEmoji,
         repo.repo,
+        chalk.magenta(repo.title),
         "-",
         chalk.green("Status:"),
         repo.status,
         chalk.green("Approved:"),
-        approvalEmoji
+        approvalEmoji,
+        "\n"
       );
     }
+  }
+  console.log(chalk.yellow("Tickets without PR information:"));
+
+  for (const issue of issuesWithoutPRs) {
+    const jiraTicketLink = createJiraTicketLink(issue.key);
+    console.log(chalk.blue(jiraTicketLink), "-", issue.fields.summary);
   }
 })();
